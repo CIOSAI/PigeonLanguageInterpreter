@@ -4,7 +4,9 @@ Pigeon is a language invented by me, inspired by Python, Julia, Javascript and m
 
 This repo here is just for me to explore how it will be interpreted, not the final product (though I doubt that would be any far off)
 
-Powered by (ohm.js)[https://github.com/ohmjs/ohm] 😎
+Powered by [ohm.js](https://github.com/ohmjs/ohm) 😎
+
+Inside `src` one can find the `Pigeon` folder, this is where the interpreting happens.
 
 ```
 Pigeon
