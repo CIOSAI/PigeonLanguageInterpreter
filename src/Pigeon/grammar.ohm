@@ -1,0 +1,82 @@
+Pigeon {
+    Program = Line*
+
+    Line = Statement Semi
+
+    Statement = Declaration
+              | FunctionCall
+              | Value
+
+	FunctionCall = #(iden "(") listOf<(discard|Value), space> ")"
+
+    Lambda = "(" listOf<Input, space> ")" Typing? "=>" Value
+
+    Input = iden Typing
+
+    Declaration = Declarator iden Typing? Value
+
+    Declarator = "let" | "mut" | "set"
+
+    Tuple = "(" listOf<Value, space> ")"
+
+    Array = "[" listOf<Value, space> "]"
+
+    Value = Literal
+          | Lambda
+          | FunctionCall
+          | Tuple
+          | Array
+          | iden
+    
+    Typing = Colon Type
+
+    Type = iden
+
+    Literal = Number
+            | Bool
+            | str
+            | Nothing
+    
+    discard = "_"
+    
+    iden = ~illegalIden idenHead+ (digit|idenHead)*
+    
+    idenHead = ~illegalIden (letter|idenValidSymbol|"\u{100}".."\u{10FFFF}")
+
+    illegalIden = "//"|"/*"|"*/"
+
+    idenValidSymbol =
+    "+"|"-"|"~"|"?"|"<"|">"|"*"|"^"|"#"|"%"|"&"|"="|"_"|"/"
+
+    Number = "-"? Float
+           | "-"? Int
+
+    Float = #(digit+ "." digit*) --startedWithDigit
+          | #("." digit+) --startedWithDot
+    
+    Int = #(digit+)
+    
+    Bool = "TRUE" | "FALSE"
+
+    str = "`" strContent* "`"
+
+    strContent = ~("`"|"\\") any --nonEscaped 
+                | "\\" escaped --escaped
+    
+    escaped = "`" | "\\" | "b" | "f" | "n" | "r" | "t" | "v"
+
+    Nothing = "null"
+
+    space += comment
+
+    comment = multilineComment
+            | singlelineComment
+    
+    multilineComment = "/*" (~"*/" any)* "*/"
+
+    singlelineComment = "//" #((~"\n" any)*)
+
+    Semi = ";"
+
+    Colon = ":"
+}
