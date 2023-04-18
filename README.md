@@ -1,4 +1,4 @@
-# Pigeon Language
+# Pigeon Language(WIP, bugs alert)
 
 Pigeon is a language invented by me, inspired by Python, Julia, Javascript and more.
 
