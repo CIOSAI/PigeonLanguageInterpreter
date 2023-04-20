@@ -28,11 +28,11 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("empty", () => {
-    expect(pg.parse("")).toEqual([]);
-    expect(pg.parse("\n")).toEqual([]);
-    expect(pg.parse("     ")).toEqual([]);
-    expect(pg.parse("//among us sus")).toEqual([]);
-    expect(pg.parse("/* Did you know? In terms of...*/")).toEqual([]);
+    expect(pg.parse("").result).toEqual([]);
+    expect(pg.parse("\n").result).toEqual([]);
+    expect(pg.parse("     ").result).toEqual([]);
+    expect(pg.parse("//among us sus").result).toEqual([]);
+    expect(pg.parse("/* Did you know? In terms of...*/").result).toEqual([]);
   });
 
   it("numbers legal", () => {
@@ -52,7 +52,7 @@ describe("Pigeon Simple Data Parsing", () => {
 
   it("numbers illegal", () => {
     let check = (content: string) => {
-      expect(() => pg.parse(content)).toThrow();
+      expect(pg.parse(content).legal).toEqual(false);
     };
     check("69.69.69;");
     check("69.69.;");
@@ -76,7 +76,7 @@ describe("Pigeon Simple Data Parsing", () => {
 
   it("strings illegal", () => {
     let check = (content: string) => {
-      expect(() => pg.parse(content)).toThrow();
+      expect(pg.parse(content).legal).toEqual(false);
     };
     check("`");
     check("`\\");
@@ -124,7 +124,7 @@ describe("Pigeon Simple Data Parsing", () => {
 
   it("arrays and tuples illegal", () => {
     let check = (content: string) => {
-      expect(() => pg.parse(content)).toThrow();
+      expect(pg.parse(content).legal).toEqual(false);
     };
     check("[");
     check("[0 1 2");
