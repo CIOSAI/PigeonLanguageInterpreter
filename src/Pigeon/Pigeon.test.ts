@@ -37,7 +37,7 @@ describe("Pigeon Simple Data Parsing", () => {
 
   it("numbers legal", () => {
     let check = (content: string, val: any, type: PigeonType) => {
-      let subject = pg.parse(content)[0];
+      let subject = pg.parse(content).result[0];
       expect(subject.type()).toEqual(type);
       expect(subject.value).toEqual(val);
     };
@@ -64,7 +64,7 @@ describe("Pigeon Simple Data Parsing", () => {
 
   it("strings legal", () => {
     let check = (content: string, val: string) => {
-      let subject = pg.parse(content)[0];
+      let subject = pg.parse(content).result[0];
       expect(subject.type()).toEqual(TypeString);
       expect(subject.value).toEqual(val);
     };
@@ -85,7 +85,7 @@ describe("Pigeon Simple Data Parsing", () => {
 
   it("other literals legal", () => {
     let check = (content: string, val: any, type: PigeonType) => {
-      let subject = pg.parse(content)[0];
+      let subject = pg.parse(content).result[0];
       expect(subject.type()).toEqual(type);
       expect(subject.value).toEqual(val);
     };
@@ -96,7 +96,7 @@ describe("Pigeon Simple Data Parsing", () => {
 
   it("arrays and tuples legal", () => {
     let check = (content: string, type: PigeonType) => {
-      let subject = pg.parse(content)[0];
+      let subject = pg.parse(content).result[0];
       expect(subject.type()).toEqual(type);
     };
     check("[];", new PigeonArrayType(new PigeonPrimitive("Unknown")));
@@ -135,15 +135,15 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("identifiers legal", () => {
-    expect(pg.legal("uwu;")).toBe(true);
-    expect(pg.legal("STATUS_OK;")).toBe(true);
-    expect(pg.legal("+-~%#_/;")).toBe(true);
-    expect(pg.legal("天地玄黃;")).toBe(true);
+    expect(pg.parse("uwu;").legal).toBe(true);
+    expect(pg.parse("STATUS_OK;").legal).toBe(true);
+    expect(pg.parse("+-~%#_/;").legal).toBe(true);
+    expect(pg.parse("天地玄黃;").legal).toBe(true);
   });
 
   it("identifiers illegal", () => {
-    expect(pg.legal("hello//world;")).toBe(false);
-    expect(pg.legal("hello/*world;")).toBe(false);
+    expect(pg.parse("hello//world;").legal).toBe(false);
+    expect(pg.parse("hello/*world;").legal).toBe(false);
   });
 });
 
@@ -199,9 +199,11 @@ bread( 0 _ );
 
   it("declarations legal", () => {
     pg.parse("let hw `hello world!`;");
-    expect(pg.parse("hw;")[0].type(pg.contexts)).toEqual(TypeString);
+    expect(pg.parse("hw;").result[0].type(pg.contexts)).toEqual(TypeString);
     pg.parse("let count_len (str: String): Int => 1;");
-    expect(pg.parse("count_len(hw);")[0].type(pg.contexts)).toEqual(TypeInt);
+    expect(pg.parse("count_len(hw);").result[0].type(pg.contexts)).toEqual(
+      TypeInt
+    );
   });
 
   // it("entire program", () => {

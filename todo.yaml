@@ -1,4 +1,3 @@
 catch typing errors in main.ts:
-	add onIdentifierNotFound error
 	(?) add "source" to PigeonNode:
 		mechanism to trace to the point of error
