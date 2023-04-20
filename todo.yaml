@@ -1,3 +1,6 @@
-catch typing errors in main.ts:
-	(?) add "source" to PigeonNode:
-		mechanism to trace to the point of error
+create error queue (Array<callback>):
+	pigeon.errorQueue.push(()=>something)
+	at parse():
+		pop errors from 0 to pigeon.errorQueue.length
+mechanism to trace to the point of error:
+	add "source" to PigeonNode
