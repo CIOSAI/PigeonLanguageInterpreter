@@ -9,7 +9,6 @@ class PigeonContext {
   context: Map<string, PigeonData[]> = new Map();
 
   add(name: string, node: PigeonData) {
-    //duplication not accounted yet
     let search = this.context.get(name);
     if (search) {
       search.push(node);

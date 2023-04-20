@@ -232,11 +232,6 @@ class Pigeon {
       ),
     });
 
-    let onTypeMismatch = this.onTypeMismatch;
-    let onVariableRedeclared = this.onVariableRedeclared;
-    let onReassignNonExistentVariable = this.onReassignNonExistentVariable;
-    let onReassignImmutableVariable = this.onReassignImmutableVariable;
-
     this.parser = ohm.grammar(source_grammar);
     this.semantic = this.parser.createSemantics();
     this.semantic.addOperation("parse", {
@@ -262,7 +257,7 @@ class Pigeon {
         if (type.numChildren != 0) {
           let expectedType = type.child(0).parse();
           if (!expectedType.equals(node.type(pigeon.contexts))) {
-            onTypeMismatch(expectedType, node.type(pigeon.contexts));
+            pigeon.onTypeMismatch(expectedType, node.type(pigeon.contexts));
           }
         }
         return node;
@@ -275,7 +270,7 @@ class Pigeon {
         if (type.numChildren != 0) {
           let expectedType = type.child(0).parse();
           if (!expectedType.equals(data.type(pigeon.contexts))) {
-            onTypeMismatch(expectedType, data.type(pigeon.contexts));
+            pigeon.onTypeMismatch(expectedType, data.type(pigeon.contexts));
             return new PigeonLiteral(null, TypeNull);
           }
         }
@@ -294,7 +289,7 @@ class Pigeon {
                 exist[0].data.type(pigeon.contexts) instanceof PigeonLambdaType
               )
             ) {
-              onVariableRedeclared(name);
+              pigeon.onVariableRedeclared(name);
               return true;
             }
           }
@@ -316,11 +311,11 @@ class Pigeon {
             let result = pigeon.contexts.get(name);
             // set for lambda overloading not currently supported
             if (result == undefined) {
-              onReassignNonExistentVariable(name);
+              pigeon.onReassignNonExistentVariable(name);
               return;
             }
             if (!result[0].mut) {
-              onReassignImmutableVariable(name);
+              pigeon.onReassignImmutableVariable(name);
               return;
             }
             result[0] = { mut: true, data: value };
