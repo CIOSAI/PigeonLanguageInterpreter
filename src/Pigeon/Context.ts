@@ -48,4 +48,4 @@ class PigeonContextStack {
   }
 }
 
-export { PigeonContext, PigeonContextStack };
+export { type PigeonData, PigeonContext, PigeonContextStack };

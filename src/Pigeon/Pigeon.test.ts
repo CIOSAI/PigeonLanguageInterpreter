@@ -101,7 +101,6 @@ describe("Pigeon Simple Data Parsing", () => {
     };
     check("[];", new PigeonArrayType(new PigeonPrimitive("Unknown")));
     check("[0 1 2];", new PigeonArrayType(TypeInt));
-    check("[ [] []];", new PigeonArrayType(new PigeonPrimitive("Unknown")));
     check("[0\n1\n2];", new PigeonArrayType(TypeInt));
     check(
       "[[0 1] [3 4 5]];",
@@ -132,6 +131,7 @@ describe("Pigeon Simple Data Parsing", () => {
     check("(");
     check("(0 1 2");
     check("(0 1 2;");
+    check("[ [] []];");
   });
 
   it("identifiers legal", () => {
