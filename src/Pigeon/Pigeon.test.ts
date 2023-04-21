@@ -1,6 +1,7 @@
 import { describe, expect } from "@jest/globals";
 import * as fs from "fs";
 import * as path from "path";
+import * as ohm from "ohm-js";
 import { Pigeon } from "./Pigeon";
 import {
   PigeonType,
@@ -209,4 +210,13 @@ bread( 0 _ );
   // it("entire program", () => {
   //   expect(pg.legal("let hw `hello world!`;log(hw);")).toBe(true);
   // });
+
+  it("reassign immutable variable", () => {
+    let sourceCode = "let hw 69;\nmut hehe 6.9;\nset hw 420;";
+    pg.onReassignImmutableVariable = (source: ohm.Node) => {
+      console.log(sourceCode);
+      console.log(source.source.getLineAndColumnMessage());
+    };
+    expect(pg.parse(sourceCode).legal).toBe(false);
+  });
 });

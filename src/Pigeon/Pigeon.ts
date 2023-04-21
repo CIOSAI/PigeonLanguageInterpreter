@@ -34,7 +34,7 @@ class PigeonIdentifier implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
   value: string;
 
-  constructor(pigeon: Pigeon, value: string) {
+  constructor(pigeon: Pigeon, source: ohm.Node, value: string) {
     this.value = value;
     this.type = (contexts: PigeonContextStack) => {
       let search = contexts.get(value);
@@ -47,7 +47,7 @@ class PigeonIdentifier implements PigeonNode {
         }
       }
       pigeon.errorQueue.push(() => {
-        pigeon.onVariableUsedBeforeDeclaration(value);
+        pigeon.onVariableUsedBeforeDeclaration(source);
       });
       return TypeUnknown;
     };
@@ -58,7 +58,7 @@ class PigeonTuple implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
   value: PigeonNode[];
 
-  constructor(pigeon: Pigeon, value: any[]) {
+  constructor(value: any[]) {
     this.value = value;
     this.type = (contexts: PigeonContextStack) =>
       new PigeonComplexType(
@@ -72,7 +72,7 @@ class PigeonArray implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
   value: any[];
 
-  constructor(pigeon: Pigeon, value: any[]) {
+  constructor(pigeon: Pigeon, source: ohm.Node, value: any[]) {
     this.value = value;
     let unknownTypeArray = new PigeonArrayType(TypeUnknown);
     this.type = (contexts: PigeonContextStack) => {
@@ -82,12 +82,15 @@ class PigeonArray implements PigeonNode {
         let type = this.value[0].type(contexts);
         for (let i = 1; i < this.value.length; i++) {
           if (this.value[i].type(contexts).equals(unknownTypeArray)) {
-            pigeon.errorQueue.push(pigeon.onNestedUnknownContent);
+            pigeon.errorQueue.push(() => {
+              pigeon.onNestedUnknownContent(source);
+            });
             return unknownTypeArray;
           }
           if (!type.equals(this.value[i].type(contexts))) {
             pigeon.errorQueue.push(() => {
               pigeon.onItemTypeInconsistent(
+                source,
                 Array.from(new Set(this.value.map((v) => v.type(contexts))))
               );
             });
@@ -105,7 +108,12 @@ class PigeonFunctionCall implements PigeonNode {
   iden: PigeonIdentifier;
   args: Array<PigeonNode>;
 
-  constructor(pigeon: Pigeon, iden: PigeonIdentifier, args: Array<PigeonNode>) {
+  constructor(
+    pigeon: Pigeon,
+    source: ohm.Node,
+    iden: PigeonIdentifier,
+    args: Array<PigeonNode>
+  ) {
     this.iden = iden;
     this.args = args;
     this.type = (contexts: PigeonContextStack) => {
@@ -128,6 +136,7 @@ class PigeonFunctionCall implements PigeonNode {
           }
           pigeon.errorQueue.push(() => {
             pigeon.onNoMatchingInputFound(
+              source,
               args.map((a) => a.type(contexts)),
               (search as PigeonData[]).map(
                 (s) =>
@@ -142,7 +151,7 @@ class PigeonFunctionCall implements PigeonNode {
         }
       }
       pigeon.errorQueue.push(() => {
-        pigeon.onNoMatchingFunctionName(iden.value);
+        pigeon.onNoMatchingFunctionName(source);
       });
       return TypeUnknown;
     };
@@ -154,11 +163,7 @@ class PigeonLambda implements PigeonNode {
   args: { name: string; type: PigeonType }[];
   body: PigeonNode;
 
-  constructor(
-    pigeon: Pigeon,
-    args: { name: string; type: PigeonType }[],
-    body: PigeonNode
-  ) {
+  constructor(args: { name: string; type: PigeonType }[], body: PigeonNode) {
     this.args = args;
     this.body = body;
     this.type = (contexts: PigeonContextStack) => {
@@ -181,20 +186,126 @@ class PigeonLambda implements PigeonNode {
   }
 }
 
+class PigeonLet implements PigeonNode {
+  type: (contexts: PigeonContextStack) => PigeonType;
+  iden: string;
+  value: PigeonNode;
+  constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
+    this.iden = iden.sourceString;
+    this.value = value;
+    this.type = (contexts: PigeonContextStack) => TypeNull;
+
+    let exist = pigeon.contexts.get(this.iden);
+    if (exist != undefined) {
+      if (
+        !(
+          value.type(pigeon.contexts) instanceof PigeonLambdaType &&
+          exist[0].data.type(pigeon.contexts) instanceof PigeonLambdaType
+        )
+      ) {
+        pigeon.errorQueue.push(() => {
+          pigeon.onVariableRedeclared(iden);
+        });
+        return;
+      }
+    }
+    pigeon.contexts.add(this.iden, {
+      mut: false,
+      data: this.value,
+    });
+  }
+}
+
+class PigeonMut implements PigeonNode {
+  type: (contexts: PigeonContextStack) => PigeonType;
+  iden: string;
+  value: PigeonNode;
+  constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
+    this.iden = iden.sourceString;
+    this.value = value;
+    this.type = (contexts: PigeonContextStack) => TypeNull;
+
+    let exist = pigeon.contexts.get(this.iden);
+    if (exist != undefined) {
+      if (
+        !(
+          value.type(pigeon.contexts) instanceof PigeonLambdaType &&
+          exist[0].data.type(pigeon.contexts) instanceof PigeonLambdaType
+        )
+      ) {
+        pigeon.errorQueue.push(() => {
+          pigeon.onVariableRedeclared(iden);
+        });
+        return;
+      }
+    }
+    pigeon.contexts.add(this.iden, {
+      mut: true,
+      data: this.value,
+    });
+  }
+}
+
+class PigeonSet implements PigeonNode {
+  type: (contexts: PigeonContextStack) => PigeonType;
+  iden: string;
+  value: PigeonNode;
+  constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
+    this.iden = iden.sourceString;
+    this.value = value;
+    this.type = (contexts: PigeonContextStack) => TypeNull;
+
+    let result = pigeon.contexts.get(this.iden);
+    // set for lambda overloading not currently supported
+    if (result == undefined) {
+      pigeon.errorQueue.push(() => {
+        pigeon.onReassignNonExistentVariable(iden);
+      });
+      return;
+    }
+    if (!result[0].mut) {
+      pigeon.errorQueue.push(() => {
+        pigeon.onReassignImmutableVariable(iden);
+      });
+      return;
+    }
+    if (
+      !result[0].data
+        .type(pigeon.contexts)
+        .includes(value.type(pigeon.contexts))
+    ) {
+      pigeon.errorQueue.push(() => {
+        pigeon.onTypeMismatch(
+          iden,
+          (result as PigeonData[])[0].data.type(pigeon.contexts),
+          value.type(pigeon.contexts)
+        );
+      });
+      return;
+    }
+    result[0] = { mut: true, data: this.value };
+  }
+}
+
 class Pigeon {
-  onItemTypeInconsistent: (types: PigeonType[]) => void = () => {};
-  onNestedUnknownContent: () => void = () => {};
-  onTypeMismatch: (expected: PigeonType, received: PigeonType) => void =
+  onItemTypeInconsistent: (source: ohm.Node, types: PigeonType[]) => void =
     () => {};
-  onVariableRedeclared: (name: string) => void = () => {};
-  onReassignNonExistentVariable: (name: string) => void = () => {};
-  onReassignImmutableVariable: (name: string) => void = () => {};
-  onVariableUsedBeforeDeclaration: (name: string) => void = () => {};
+  onNestedUnknownContent: (source: ohm.Node) => void = () => {};
+  onTypeMismatch: (
+    source: ohm.Node,
+    expected: PigeonType,
+    received: PigeonType
+  ) => void = () => {};
+  onVariableRedeclared: (source: ohm.Node) => void = () => {};
+  onReassignNonExistentVariable: (source: ohm.Node) => void = () => {};
+  onReassignImmutableVariable: (source: ohm.Node) => void = () => {};
+  onVariableUsedBeforeDeclaration: (source: ohm.Node) => void = () => {};
   onNoMatchingInputFound: (
+    source: ohm.Node,
     receivedArgs: PigeonType[],
     expectedArgList: PigeonComplexType[]
   ) => void = () => {};
-  onNoMatchingFunctionName: (name: string) => void = () => {};
+  onNoMatchingFunctionName: (source: ohm.Node) => void = () => {};
   onParseError: (message: string) => void = () => {};
 
   parser: ohm.Grammar;
@@ -224,7 +335,6 @@ class Pigeon {
     this.contexts.add("log", {
       mut: false,
       data: new PigeonLambda(
-        this,
         [{ name: "msg", type: TypeString }],
         new PigeonLiteral(null, TypeNull)
       ),
@@ -232,7 +342,6 @@ class Pigeon {
     this.contexts.add("+", {
       mut: false,
       data: new PigeonLambda(
-        this,
         [
           { name: "a", type: TypeInt },
           { name: "b", type: TypeInt },
@@ -257,17 +366,18 @@ class Pigeon {
       },
       FunctionCall(iden, leftBracket, args, rightBracket) {
         let items = args.asIteration().children.map((child) => child.parse());
-        return new PigeonFunctionCall(pigeon, iden.parse(), items);
+        return new PigeonFunctionCall(pigeon, this, iden.parse(), items);
       },
       Lambda(leftBracket, args, rightBracket, type, arrow, body) {
         let params = args.asIteration().children.map((child) => child.parse());
 
-        let node = new PigeonLambda(pigeon, params, body.parse());
+        let node = new PigeonLambda(params, body.parse());
         if (type.numChildren != 0) {
           let expectedReturnType = type.child(0).parse();
           if (!expectedReturnType.equals(node.type(pigeon.contexts).args[1])) {
             pigeon.errorQueue.push(() => {
               pigeon.onTypeMismatch(
+                this,
                 expectedReturnType,
                 node.type(pigeon.contexts)
               );
@@ -285,64 +395,25 @@ class Pigeon {
           let expectedType = type.child(0).parse();
           if (!expectedType.equals(data.type(pigeon.contexts))) {
             pigeon.errorQueue.push(() => {
-              pigeon.onTypeMismatch(expectedType, data.type(pigeon.contexts));
+              pigeon.onTypeMismatch(
+                this,
+                expectedType,
+                data.type(pigeon.contexts)
+              );
             });
             return new PigeonLiteral(null, TypeNull);
           }
         }
-        action.parse()(iden.sourceString, value.parse());
-        return new PigeonLiteral(null, TypeNull);
+        if (action.parse() == "let") {
+          return new PigeonLet(pigeon, iden, value.parse());
+        } else if (action.parse() == "mut") {
+          return new PigeonMut(pigeon, iden, value.parse());
+        } else {
+          return new PigeonSet(pigeon, iden, value.parse());
+        }
       },
       Declarator(content) {
-        let action = content.sourceString as "let" | "mut" | "set";
-
-        let ifNameCollided = (name: string, value: PigeonNode): boolean => {
-          let exist = pigeon.contexts.get(name);
-          if (exist != undefined) {
-            if (
-              !(
-                value.type(pigeon.contexts) instanceof PigeonLambdaType &&
-                exist[0].data.type(pigeon.contexts) instanceof PigeonLambdaType
-              )
-            ) {
-              pigeon.errorQueue.push(() => {
-                pigeon.onVariableRedeclared(name);
-              });
-              return true;
-            }
-          }
-          return false;
-        };
-
-        if (action == "let") {
-          return (name: string, value: PigeonNode) => {
-            if (ifNameCollided(name, value)) return;
-            pigeon.contexts.add(name, { mut: false, data: value });
-          };
-        } else if (action == "mut") {
-          return (name: string, value: PigeonNode) => {
-            if (ifNameCollided(name, value)) return;
-            pigeon.contexts.add(name, { mut: true, data: value });
-          };
-        } else {
-          return (name: string, value: PigeonNode) => {
-            let result = pigeon.contexts.get(name);
-            // set for lambda overloading not currently supported
-            if (result == undefined) {
-              pigeon.errorQueue.push(() => {
-                pigeon.onReassignNonExistentVariable(name);
-              });
-              return;
-            }
-            if (!result[0].mut) {
-              pigeon.errorQueue.push(() => {
-                pigeon.onReassignImmutableVariable(name);
-              });
-              return;
-            }
-            result[0] = { mut: true, data: value };
-          };
-        }
+        return content.sourceString as "let" | "mut" | "set";
       },
       Typing(colon, type) {
         return new PigeonPrimitive(type.sourceString);
@@ -352,17 +423,17 @@ class Pigeon {
           .asIteration()
           .children.map((child) => child.parse());
 
-        return new PigeonTuple(pigeon, items);
+        return new PigeonTuple(items);
       },
       Array(leftBracket, content, rightBracket) {
         let items = content
           .asIteration()
           .children.map((child) => child.parse());
 
-        return new PigeonArray(pigeon, items);
+        return new PigeonArray(pigeon, this, items);
       },
       iden(head, tail) {
-        return new PigeonIdentifier(pigeon, this.sourceString);
+        return new PigeonIdentifier(pigeon, this, this.sourceString);
       },
       Number(neg, numeral) {
         let num = numeral.parse();
