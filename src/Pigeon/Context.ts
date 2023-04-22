@@ -3,6 +3,7 @@ import { PigeonNode } from "./Pigeon";
 interface PigeonData {
   mut: boolean;
   data: PigeonNode;
+  evaluation: any;
 }
 
 class PigeonContext {

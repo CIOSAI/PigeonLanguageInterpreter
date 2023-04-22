@@ -12,7 +12,7 @@ document.getElementById("app")?.appendChild(nextLine);
 
 let pg = pigeonStart();
 
-let sourceCode = `let hw \`hello world!\`;\nlet count_len (str: String): Int => 1;\ncount_len(hw);`;
+let sourceCode = `let hw \`hello world!\`;\nlen(hw);`;
 
 let parsed = pg.parse(sourceCode);
 if (parsed.legal) {

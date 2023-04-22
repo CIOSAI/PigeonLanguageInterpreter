@@ -20,6 +20,12 @@ interface PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
   eval: (contexts: PigeonContextStack) => any;
 }
+const mutData = (content: PigeonNode) => {
+  return { mut: true, data: content, evaluation: undefined };
+};
+const constData = (content: PigeonNode) => {
+  return { mut: false, data: content, evaluation: undefined };
+};
 
 class PigeonLiteral implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
@@ -60,7 +66,7 @@ class PigeonIdentifier implements PigeonNode {
       if (search == undefined) {
         throw new Error(`Variable '${value}' used before declaration `);
       } else {
-        return search[0].data;
+        return search[0].evaluation;
       }
     };
   }
@@ -192,10 +198,7 @@ class PigeonLambda implements PigeonNode {
     this.type = (contexts: PigeonContextStack) => {
       let localScope = new PigeonContext();
       for (let arg of args) {
-        localScope.add(arg.name, {
-          mut: true,
-          data: new PigeonLiteral(null, arg.type),
-        });
+        localScope.add(arg.name, mutData(new PigeonLiteral(null, arg.type)));
       }
       contexts.push(localScope);
 
@@ -213,13 +216,36 @@ class PigeonLambda implements PigeonNode {
       for (let i = 0; i < args.length; i++) {
         localScope.add(this.args[i].name, {
           mut: true,
-          data: params[i],
+          data: new PigeonLiteral(params[i], this.args[i].type),
+          evaluation: params[i],
         });
       }
       contexts.push(localScope);
       let returnedValue = this.body.eval(contexts);
       contexts.pop();
       return returnedValue;
+    };
+  }
+}
+
+class PigeonPrebuiltLambda implements PigeonNode {
+  type: (contexts: PigeonContextStack) => PigeonLambdaType;
+  eval: (contexts: PigeonContextStack) => any;
+  args: PigeonType[];
+
+  constructor(args: PigeonType[], output: PigeonType, func: Function) {
+    this.args = args;
+    this.type = (contexts: PigeonContextStack) => {
+      return new PigeonLambdaType(this.args, output);
+    };
+    this.eval = (contexts) => (params: Array<any>) => {
+      if (params.length != this.args.length)
+        throw new Error("Invalid number of arguments");
+      try {
+        return func(...params);
+      } catch (error) {
+        throw new Error("Internal error: " + error);
+      }
     };
   }
 }
@@ -238,7 +264,11 @@ class PigeonLet implements PigeonNode {
       let exist = contexts.get(this.iden);
       if (exist != undefined)
         throw new Error(`Variable '${this.iden}' already exists`);
-      contexts.add(this.iden, { mut: false, data: this.value.eval(contexts) });
+      contexts.add(this.iden, {
+        mut: false,
+        data: this.value,
+        evaluation: this.value.eval(contexts),
+      });
     };
   }
   parse(pigeon: Pigeon, iden: ohm.Node) {
@@ -256,10 +286,7 @@ class PigeonLet implements PigeonNode {
         return;
       }
     }
-    pigeon.contexts.add(this.iden, {
-      mut: false,
-      data: this.value,
-    });
+    pigeon.contexts.add(this.iden, constData(this.value));
   }
 }
 
@@ -277,7 +304,11 @@ class PigeonMut implements PigeonNode {
       let exist = contexts.get(this.iden);
       if (exist != undefined)
         throw new Error(`Variable '${this.iden}' already exists`);
-      contexts.add(this.iden, { mut: false, data: this.value.eval(contexts) });
+      contexts.add(this.iden, {
+        mut: false,
+        data: this.value,
+        evaluation: this.value.eval(contexts),
+      });
     };
   }
   parse(pigeon: Pigeon, iden: ohm.Node) {
@@ -295,10 +326,7 @@ class PigeonMut implements PigeonNode {
         return;
       }
     }
-    pigeon.contexts.add(this.iden, {
-      mut: true,
-      data: this.value,
-    });
+    pigeon.contexts.add(this.iden, mutData(this.value));
   }
 }
 
@@ -357,7 +385,7 @@ class PigeonSet implements PigeonNode {
       });
       return;
     }
-    result[0] = { mut: true, data: this.value };
+    result[0] = mutData(this.value);
   }
 }
 
@@ -389,40 +417,36 @@ class Pigeon {
 
   constructor(source_grammar: string) {
     let pigeon = this;
-    this.contexts.add("uwu", {
-      mut: false,
-      data: new PigeonLiteral("uwu", TypeString),
-    });
-    this.contexts.add("STATUS_OK", {
-      mut: false,
-      data: new PigeonLiteral(201, TypeInt),
-    });
-    this.contexts.add("+-~%#_/", {
-      mut: false,
-      data: new PigeonLiteral("+-~%#_/", TypeString),
-    });
-    this.contexts.add("天地玄黃", {
-      mut: false,
-      data: new PigeonLiteral(69.69, TypeFloat),
-    });
+    // this.contexts.add("uwu", {
+    //   mut: false,
+    //   data: new PigeonLiteral("uwu", TypeString),
+    // });
+    // this.contexts.add("STATUS_OK", {
+    //   mut: false,
+    //   data: new PigeonLiteral(201, TypeInt),
+    // });
+    // this.contexts.add("+-~%#_/", {
+    //   mut: false,
+    //   data: new PigeonLiteral("+-~%#_/", TypeString),
+    // });
+    // this.contexts.add("天地玄黃", {
+    //   mut: false,
+    //   data: new PigeonLiteral(69.69, TypeFloat),
+    // });
 
-    this.contexts.add("log", {
-      mut: false,
-      data: new PigeonLambda(
-        [{ name: "msg", type: TypeString }],
-        new PigeonLiteral(null, TypeNull)
-      ),
-    });
-    this.contexts.add("+", {
-      mut: false,
-      data: new PigeonLambda(
-        [
-          { name: "a", type: TypeInt },
-          { name: "b", type: TypeInt },
-        ],
-        new PigeonLiteral(0, TypeInt)
-      ),
-    });
+    let addGlobalPrebuilt = (name: string, content: PigeonNode) => {
+      this.contexts.add(name, {
+        mut: false,
+        data: content,
+        evaluation: content.eval(this.contexts),
+      });
+    };
+    addGlobalPrebuilt(
+      "len",
+      new PigeonPrebuiltLambda([TypeString], TypeInt, (arg: string) => {
+        return arg.length;
+      })
+    );
 
     this.parser = ohm.grammar(source_grammar);
     this.semantic = this.parser.createSemantics();
