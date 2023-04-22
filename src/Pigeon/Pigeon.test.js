@@ -1,10 +1,13 @@
-import { describe, expect } from "@jest/globals";
+import {
+  describe,
+  expect
+} from "@jest/globals";
 import * as fs from "fs";
 import * as path from "path";
-import * as ohm from "ohm-js";
-import { Pigeon } from "./Pigeon";
 import {
-  PigeonType,
+  Pigeon,
+} from "./Pigeon";
+import {
   TypeInt,
   TypeFloat,
   TypeString,
@@ -16,12 +19,14 @@ import {
 } from "./Type";
 
 describe("Pigeon Simple Data Parsing", () => {
-  let grammar: string;
-  let pg: Pigeon;
+  let grammar
+  let pg
 
   beforeAll(() => {
     const filePath = path.join(__dirname, "./grammar.ohm");
-    grammar = fs.readFileSync(filePath, { encoding: "utf-8" });
+    grammar = fs.readFileSync(filePath, {
+      encoding: "utf-8"
+    });
   });
 
   beforeEach(() => {
@@ -37,9 +42,9 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("numbers legal", () => {
-    let check = (content: string, val: any, type: PigeonType) => {
+    let check = (content, val, type) => {
       let subject = pg.parse(content).result[0];
-      expect(subject.type()).toEqual(type);
+      expect(subject.type(pg.contexts)).toEqual(type);
       expect(subject.value).toEqual(val);
     };
     check("69;", 69, TypeInt);
@@ -52,7 +57,7 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("numbers illegal", () => {
-    let check = (content: string) => {
+    let check = (content) => {
       expect(pg.parse(content).legal).toEqual(false);
     };
     check("69.69.69;");
@@ -64,9 +69,9 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("strings legal", () => {
-    let check = (content: string, val: string) => {
+    let check = (content, val) => {
       let subject = pg.parse(content).result[0];
-      expect(subject.type()).toEqual(TypeString);
+      expect(subject.type(pg.contexts)).toEqual(TypeString);
       expect(subject.value).toEqual(val);
     };
     check("``;", "");
@@ -76,7 +81,7 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("strings illegal", () => {
-    let check = (content: string) => {
+    let check = (content) => {
       expect(pg.parse(content).legal).toEqual(false);
     };
     check("`");
@@ -85,9 +90,9 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("other literals legal", () => {
-    let check = (content: string, val: any, type: PigeonType) => {
+    let check = (content, val, type) => {
       let subject = pg.parse(content).result[0];
-      expect(subject.type()).toEqual(type);
+      expect(subject.type(pg.contexts)).toEqual(type);
       expect(subject.value).toEqual(val);
     };
     check("TRUE;", true, TypeBool);
@@ -96,9 +101,9 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("arrays and tuples legal", () => {
-    let check = (content: string, type: PigeonType) => {
+    let check = (content, type) => {
       let subject = pg.parse(content).result[0];
-      expect(subject.type()).toEqual(type);
+      expect(subject.type(pg.contexts)).toEqual(type);
     };
     check("[];", new PigeonArrayType(new PigeonPrimitive("Unknown")));
     check("[0 1 2];", new PigeonArrayType(TypeInt));
@@ -123,7 +128,7 @@ describe("Pigeon Simple Data Parsing", () => {
   });
 
   it("arrays and tuples illegal", () => {
-    let check = (content: string) => {
+    let check = (content) => {
       expect(pg.parse(content).legal).toEqual(false);
     };
     check("[");
@@ -149,12 +154,14 @@ describe("Pigeon Simple Data Parsing", () => {
 });
 
 describe("Pigeon Expression Parsing", () => {
-  let grammar: string;
-  let pg: Pigeon;
+  let grammar
+  let pg
 
   beforeAll(() => {
     const filePath = path.join(__dirname, "./grammar.ohm");
-    grammar = fs.readFileSync(filePath, { encoding: "utf-8" });
+    grammar = fs.readFileSync(filePath, {
+      encoding: "utf-8"
+    });
   });
 
   beforeEach(() => {
@@ -200,11 +207,13 @@ bread( 0 _ );
 
   it("declarations legal", () => {
     pg.parse("let hw `hello world!`;");
-    expect(pg.parse("hw;").result[0].type(pg.contexts)).toEqual(TypeString);
+    expect(
+      pg.parse("hw;").result[0].type(pg.contexts)
+    ).toEqual(TypeString);
     pg.parse("let count_len (str: String): Int => 1;");
-    expect(pg.parse("count_len(hw);").result[0].type(pg.contexts)).toEqual(
-      TypeInt
-    );
+    expect(
+      pg.parse("count_len(hw);").result[0].type(pg.contexts)
+    ).toEqual(TypeInt);
   });
 
   // it("entire program", () => {
@@ -213,7 +222,7 @@ bread( 0 _ );
 
   it("reassign immutable variable", () => {
     let sourceCode = "let hw 69;\nmut hehe 6.9;\nset hw 420;";
-    pg.onReassignImmutableVariable = (source: ohm.Node) => {
+    pg.onReassignImmutableVariable = (source) => {
       console.log(sourceCode);
       console.log(source.source.getLineAndColumnMessage());
     };
