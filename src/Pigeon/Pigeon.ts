@@ -18,20 +18,24 @@ const TypeUnknown = new PigeonPrimitive("Unknown");
 
 interface PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
 }
 
 class PigeonLiteral implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   value: any;
 
   constructor(value: any, type: PigeonType) {
     this.value = value;
     this.type = (_) => type;
+    this.eval = (_) => value;
   }
 }
 
 class PigeonIdentifier implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   value: string;
 
   constructor(pigeon: Pigeon, source: ohm.Node, value: string) {
@@ -51,11 +55,20 @@ class PigeonIdentifier implements PigeonNode {
       });
       return TypeUnknown;
     };
+    this.eval = (contexts) => {
+      let search = contexts.get(value);
+      if (search == undefined) {
+        throw new Error(`Variable '${value}' used before declaration `);
+      } else {
+        return search[0].data;
+      }
+    };
   }
 }
 
 class PigeonTuple implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   value: PigeonNode[];
 
   constructor(value: any[]) {
@@ -65,11 +78,13 @@ class PigeonTuple implements PigeonNode {
         "Tuple",
         value.map((v) => v.type(contexts))
       );
+    this.eval = (contexts) => this.value.map((x) => x.eval(contexts));
   }
 }
 
 class PigeonArray implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   value: any[];
 
   constructor(pigeon: Pigeon, source: ohm.Node, value: any[]) {
@@ -100,11 +115,13 @@ class PigeonArray implements PigeonNode {
         return new PigeonArrayType(type);
       }
     };
+    this.eval = (contexts) => this.value.map((x) => x.eval(contexts));
   }
 }
 
 class PigeonFunctionCall implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   iden: PigeonIdentifier;
   args: Array<PigeonNode>;
 
@@ -155,11 +172,17 @@ class PigeonFunctionCall implements PigeonNode {
       });
       return TypeUnknown;
     };
+    this.eval = (contexts) => {
+      return this.iden.eval(contexts)(
+        this.args.map((arg) => arg.eval(contexts))
+      );
+    };
   }
 }
 
 class PigeonLambda implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonLambdaType;
+  eval: (contexts: PigeonContextStack) => any;
   args: { name: string; type: PigeonType }[];
   body: PigeonNode;
 
@@ -183,23 +206,47 @@ class PigeonLambda implements PigeonNode {
       contexts.pop();
       return lambdaType;
     };
+    this.eval = (contexts) => (params: Array<any>) => {
+      if (params.length != this.args.length)
+        throw new Error("Invalid number of arguments");
+      let localScope = new PigeonContext();
+      for (let i = 0; i < args.length; i++) {
+        localScope.add(this.args[i].name, {
+          mut: true,
+          data: params[i],
+        });
+      }
+      contexts.push(localScope);
+      let returnedValue = this.body.eval(contexts);
+      contexts.pop();
+      return returnedValue;
+    };
   }
 }
 
 class PigeonLet implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   iden: string;
   value: PigeonNode;
   constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
     this.iden = iden.sourceString;
     this.value = value;
+    this.parse(pigeon, iden);
     this.type = (contexts: PigeonContextStack) => TypeNull;
-
+    this.eval = (contexts) => {
+      let exist = contexts.get(this.iden);
+      if (exist != undefined)
+        throw new Error(`Variable '${this.iden}' already exists`);
+      contexts.add(this.iden, { mut: false, data: this.value.eval(contexts) });
+    };
+  }
+  parse(pigeon: Pigeon, iden: ohm.Node) {
     let exist = pigeon.contexts.get(this.iden);
     if (exist != undefined) {
       if (
         !(
-          value.type(pigeon.contexts) instanceof PigeonLambdaType &&
+          this.value.type(pigeon.contexts) instanceof PigeonLambdaType &&
           exist[0].data.type(pigeon.contexts) instanceof PigeonLambdaType
         )
       ) {
@@ -218,18 +265,27 @@ class PigeonLet implements PigeonNode {
 
 class PigeonMut implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   iden: string;
   value: PigeonNode;
   constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
     this.iden = iden.sourceString;
     this.value = value;
+    this.parse(pigeon, iden);
     this.type = (contexts: PigeonContextStack) => TypeNull;
-
+    this.eval = (contexts) => {
+      let exist = contexts.get(this.iden);
+      if (exist != undefined)
+        throw new Error(`Variable '${this.iden}' already exists`);
+      contexts.add(this.iden, { mut: false, data: this.value.eval(contexts) });
+    };
+  }
+  parse(pigeon: Pigeon, iden: ohm.Node) {
     let exist = pigeon.contexts.get(this.iden);
     if (exist != undefined) {
       if (
         !(
-          value.type(pigeon.contexts) instanceof PigeonLambdaType &&
+          this.value.type(pigeon.contexts) instanceof PigeonLambdaType &&
           exist[0].data.type(pigeon.contexts) instanceof PigeonLambdaType
         )
       ) {
@@ -248,13 +304,31 @@ class PigeonMut implements PigeonNode {
 
 class PigeonSet implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
   iden: string;
   value: PigeonNode;
   constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
     this.iden = iden.sourceString;
     this.value = value;
+    this.parse(pigeon, iden);
     this.type = (contexts: PigeonContextStack) => TypeNull;
-
+    this.eval = (contexts) => {
+      let result = contexts.get(this.iden);
+      if (result == undefined)
+        throw new Error(`Variable '${this.iden}' not found`);
+      if (!result[0].mut)
+        throw new Error(`Variable '${this.iden}' is immutable`);
+      if (!result[0].data.type(contexts).includes(this.value.type(contexts))) {
+        throw new Error(
+          `Type mismatch: expected ${result[0].data
+            .type(contexts)
+            .toString()} but got ${this.value.type(contexts).toString()}`
+        );
+      }
+      result[0].data = this.value.eval(contexts);
+    };
+  }
+  parse(pigeon: Pigeon, iden: ohm.Node) {
     let result = pigeon.contexts.get(this.iden);
     // set for lambda overloading not currently supported
     if (result == undefined) {
@@ -272,13 +346,13 @@ class PigeonSet implements PigeonNode {
     if (
       !result[0].data
         .type(pigeon.contexts)
-        .includes(value.type(pigeon.contexts))
+        .includes(this.value.type(pigeon.contexts))
     ) {
       pigeon.errorQueue.push(() => {
         pigeon.onTypeMismatch(
           iden,
           (result as PigeonData[])[0].data.type(pigeon.contexts),
-          value.type(pigeon.contexts)
+          this.value.type(pigeon.contexts)
         );
       });
       return;
@@ -491,20 +565,40 @@ class Pigeon {
     } as ohm.ActionDict<any>);
   }
 
-  parse(input: string): { legal: boolean; result: any } {
+  parse(input: string): { legal: boolean; result: PigeonNode[] } {
     let match = this.parser.match(input);
     if (match.failed()) {
       this.errorQueue.push(() => {
         this.onParseError(match.message ?? "no error message");
       });
-      return { legal: false, result: undefined };
+      return { legal: false, result: [] };
     }
+
+    this.contexts.push(new PigeonContext());
     let parsed = this.semantic(match).parse();
+    this.contexts.pop();
+
     if (this.errorQueue.length > 0) {
       this.errorQueue.forEach((x) => x());
-      return { legal: false, result: undefined };
+      return { legal: false, result: [] };
     }
     return { legal: true, result: parsed };
+  }
+
+  interpret(input: {
+    legal: boolean;
+    result: PigeonNode[];
+  }): Generator<any, void, void> {
+    if (!input.legal) throw new Error("input is illegal");
+    let parsed = input.result as PigeonNode[]; //result is guaranteed to be defined when input is legal
+    this.contexts.push(new PigeonContext());
+    let lines = parsed.map((x) => () => x.eval(this.contexts));
+    function* generator() {
+      for (let line of lines) {
+        yield line();
+      }
+    }
+    return generator();
   }
 }
 
