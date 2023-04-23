@@ -28,9 +28,23 @@ Pigeon {
           | Array
           | iden
     
+    Type = ArrayType
+         | LambdaType
+         | TupleType
+         | primitiveType
+         | customType
+         
     Typing = Colon Type
+    
+    LambdaType = "(" listOf<Type, space> ")" Typing
 
-    Type = iden
+    TupleType = "Tuple<" listOf<Type, space> ">"
+
+    ArrayType = Type "[]"
+
+    primitiveType = "Int" | "Float" | "Bool" | "String" | "null"
+
+    customType = &upper iden
 
     Literal = Number
             | Bool

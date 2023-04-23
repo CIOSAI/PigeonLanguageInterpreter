@@ -1,4 +1,6 @@
 import { pigeonStart } from "./Pigeon/Pigeon";
+import { PigeonType, PigeonComplexType } from "./Pigeon/Type";
+import * as ohm from "ohm-js";
 import "./style.css";
 
 // create a next line button on the page
@@ -12,10 +14,36 @@ document.getElementById("app")?.appendChild(nextLine);
 
 let pg = pigeonStart();
 
-let sourceCode = `let hw \`hello world!\`;\nlen(hw);`;
+let sourceCode = `for(5 \n(ind:Int break:():null):null=>\nlog(ind)\n);`;
+// let sourceCode = `(ind:Int break:():null):null=>log(1);`;
+// let sourceCode = `():null=>log(1);`;
+// let sourceCode = `():null=>null;`;
+
+pg.onNoMatchingInputFound = (
+  source: ohm.Node,
+  expectedArgList: PigeonComplexType[],
+  receivedArgs: PigeonType[]
+) => {
+  console.log("No Matching Input Found");
+  console.log(source.source.getLineAndColumnMessage());
+  console.log(expectedArgList.map((a) => a.toString()));
+  console.log(receivedArgs.map((a) => a.toString()));
+};
+
+pg.onTypeMismatch = (
+  source: ohm.Node,
+  expected: PigeonType,
+  received: PigeonType
+) => {
+  console.log("Type Mismatch");
+  console.log(source.source.getLineAndColumnMessage());
+  console.log(expected.toString());
+  console.log(received.toString());
+};
 
 let parsed = pg.parse(sourceCode);
 if (parsed.legal) {
+  console.log(sourceCode);
   let result = pg.interpret(parsed);
   nextLine.onclick = () => {
     let next = result.next();

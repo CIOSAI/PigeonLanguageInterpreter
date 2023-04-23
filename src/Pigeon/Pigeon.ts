@@ -145,27 +145,43 @@ class PigeonFunctionCall implements PigeonNode {
         if (search.length != 0) {
           for (let targetData of search) {
             let target = targetData.data;
-            if (!(target instanceof PigeonLambda)) continue;
-            let lambda = target as PigeonLambda;
-            if (
-              lambda.args.every((arg, i) =>
-                arg.type.includes(i in args ? args[i].type(contexts) : TypeNull)
-              )
-            ) {
-              return lambda.type(contexts).args[1];
+            if (!(target.type(contexts) instanceof PigeonLambdaType)) continue;
+            if (target instanceof PigeonLambda) {
+              // user defined function
+              if (
+                target.args.every((arg, i) =>
+                  arg.type.includes(
+                    i in args ? args[i].type(contexts) : TypeNull
+                  )
+                )
+              ) {
+                return target.type(contexts).args[1];
+              } else {
+                continue;
+              }
             } else {
-              continue;
+              // native function
+              let lambda = target as PigeonPrebuiltLambda;
+              if (
+                lambda.args.every((arg, i) =>
+                  arg.includes(i in args ? args[i].type(contexts) : TypeNull)
+                )
+              ) {
+                return lambda.type(contexts).args[1];
+              } else {
+                continue;
+              }
             }
           }
           pigeon.errorQueue.push(() => {
             pigeon.onNoMatchingInputFound(
               source,
-              args.map((a) => a.type(contexts)),
               (search as PigeonData[]).map(
                 (s) =>
                   (s.data.type(contexts) as PigeonLambdaType)
                     .args[0] as PigeonComplexType
-              )
+              ),
+              args.map((a) => a.type(contexts))
             );
           });
           return TypeUnknown;
@@ -391,24 +407,44 @@ class PigeonSet implements PigeonNode {
 
 class Pigeon {
   onItemTypeInconsistent: (source: ohm.Node, types: PigeonType[]) => void =
-    () => {};
-  onNestedUnknownContent: (source: ohm.Node) => void = () => {};
+    () => {
+      console.error("unhandled error: onItemTypeInconsistent");
+    };
+  onNestedUnknownContent: (source: ohm.Node) => void = () => {
+    console.error("unhandled error: onNestedUnknownContent");
+  };
   onTypeMismatch: (
     source: ohm.Node,
     expected: PigeonType,
     received: PigeonType
-  ) => void = () => {};
-  onVariableRedeclared: (source: ohm.Node) => void = () => {};
-  onReassignNonExistentVariable: (source: ohm.Node) => void = () => {};
-  onReassignImmutableVariable: (source: ohm.Node) => void = () => {};
-  onVariableUsedBeforeDeclaration: (source: ohm.Node) => void = () => {};
+  ) => void = () => {
+    console.error("unhandled error: onTypeMismatch");
+  };
+  onVariableRedeclared: (source: ohm.Node) => void = () => {
+    console.error("unhandled error: onVariableRedeclared");
+  };
+  onReassignNonExistentVariable: (source: ohm.Node) => void = () => {
+    console.error("unhandled error: onReassignNonExistentVariable");
+  };
+  onReassignImmutableVariable: (source: ohm.Node) => void = () => {
+    console.error("unhandled error: onReassignImmutableVariable");
+  };
+  onVariableUsedBeforeDeclaration: (source: ohm.Node) => void = () => {
+    console.error("unhandled error: onVariableUsedBeforeDeclaration");
+  };
   onNoMatchingInputFound: (
     source: ohm.Node,
-    receivedArgs: PigeonType[],
-    expectedArgList: PigeonComplexType[]
-  ) => void = () => {};
-  onNoMatchingFunctionName: (source: ohm.Node) => void = () => {};
-  onParseError: (message: string) => void = () => {};
+    expectedArgList: PigeonComplexType[],
+    receivedArgs: PigeonType[]
+  ) => void = () => {
+    console.error("unhandled error: onNoMatchingInputFound");
+  };
+  onNoMatchingFunctionName: (source: ohm.Node) => void = () => {
+    console.error("unhandled error: onNoMatchingFunctionName");
+  };
+  onParseError: (message: string) => void = () => {
+    console.error("unhandled error: onParseError");
+  };
 
   parser: ohm.Grammar;
   semantic: ohm.Semantics;
@@ -447,6 +483,37 @@ class Pigeon {
         return arg.length;
       })
     );
+    addGlobalPrebuilt(
+      "log",
+      new PigeonPrebuiltLambda([TypeInt], TypeNull, (arg: any) => {
+        console.log(arg);
+      })
+    );
+    addGlobalPrebuilt(
+      "for",
+      new PigeonPrebuiltLambda(
+        [
+          TypeInt,
+          new PigeonLambdaType(
+            [TypeInt, new PigeonLambdaType([], TypeNull)],
+            TypeNull
+          ),
+        ],
+        TypeNull,
+        (amt: number, callback: (params: any[]) => void) => {
+          for (let i = 0; i < amt; i++) {
+            let broke = false;
+            callback([
+              i,
+              () => {
+                broke = true;
+              },
+            ]);
+            if (broke) break;
+          }
+        }
+      )
+    );
 
     this.parser = ohm.grammar(source_grammar);
     this.semantic = this.parser.createSemantics();
@@ -477,7 +544,7 @@ class Pigeon {
               pigeon.onTypeMismatch(
                 this,
                 expectedReturnType,
-                node.type(pigeon.contexts)
+                node.type(pigeon.contexts).args[1]
               );
             });
           }
@@ -513,8 +580,29 @@ class Pigeon {
       Declarator(content) {
         return content.sourceString as "let" | "mut" | "set";
       },
-      Typing(colon, type) {
+      LambdaType(leftBracket, args, rightBracket, returnType) {
+        return new PigeonLambdaType(
+          args.asIteration().children.map((child) => child.parse()),
+          returnType.parse()
+        );
+      },
+      TupleType(leftBracket, args, rightBracket) {
+        return new PigeonComplexType(
+          "Tuple",
+          args.asIteration().children.map((arg: ohm.Node) => arg.parse())
+        );
+      },
+      ArrayType(type, _) {
+        return new PigeonArrayType(type.parse());
+      },
+      primitiveType(type) {
         return new PigeonPrimitive(type.sourceString);
+      },
+      customType(head, type) {
+        return new PigeonPrimitive(type.sourceString);
+      },
+      Typing(colon, type) {
+        return type.parse();
       },
       Tuple(leftBracket, content, rightBracket) {
         let items = content
