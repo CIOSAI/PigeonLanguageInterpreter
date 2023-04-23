@@ -195,9 +195,9 @@ class PigeonFunctionCall implements PigeonNode {
       return TypeUnknown;
     };
     this.eval = (contexts) => {
-      return this.iden.eval(contexts)(
-        this.args.map((arg) => arg.eval(contexts))
-      );
+      let toCall = this.iden.eval(contexts);
+      let params = this.args.map((arg) => arg.eval(contexts));
+      return toCall(params);
     };
   }
 }
@@ -214,7 +214,15 @@ class PigeonLambda implements PigeonNode {
     this.type = (contexts: PigeonContextStack) => {
       let localScope = new PigeonContext();
       for (let arg of args) {
-        localScope.add(arg.name, mutData(new PigeonLiteral(null, arg.type)));
+        let pseudoData: PigeonNode = new PigeonLiteral(null, arg.type);
+        if (arg.type instanceof PigeonLambdaType) {
+          pseudoData = new PigeonPrebuiltLambda(
+            (arg.type.args[0] as PigeonComplexType).args,
+            arg.type.args[1],
+            () => {}
+          );
+        }
+        localScope.add(arg.name, mutData(pseudoData));
       }
       contexts.push(localScope);
 
@@ -405,6 +413,31 @@ class PigeonSet implements PigeonNode {
   }
 }
 
+class PigeonBlock implements PigeonNode {
+  type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
+  constructor(lines: PigeonNode[]) {
+    this.type = (contexts: PigeonContextStack) => {
+      contexts.push(new PigeonContext());
+      let lastType = TypeNull;
+      lines.forEach((line) => {
+        lastType = line.type(contexts);
+      });
+      contexts.pop();
+      return lastType;
+    };
+    this.eval = (contexts: PigeonContextStack) => {
+      contexts.push(new PigeonContext());
+      let lastValue = null;
+      lines.forEach((line) => {
+        lastValue = line.eval(contexts);
+      });
+      contexts.pop();
+      return lastValue;
+    };
+  }
+}
+
 class Pigeon {
   onItemTypeInconsistent: (source: ohm.Node, types: PigeonType[]) => void =
     () => {
@@ -502,6 +535,8 @@ class Pigeon {
         TypeNull,
         (amt: number, callback: (params: any[]) => void) => {
           for (let i = 0; i < amt; i++) {
+            // the block takes note that the loop is broken, but follows thru
+            // this is expected, but problematic behavior
             let broke = false;
             callback([
               i,
@@ -514,6 +549,16 @@ class Pigeon {
         }
       )
     );
+    addGlobalPrebuilt(
+      "apply",
+      new PigeonPrebuiltLambda(
+        [new PigeonLambdaType([], TypeNull)],
+        TypeNull,
+        (callback: (params: any[]) => void) => {
+          callback([]);
+        }
+      )
+    );
 
     this.parser = ohm.grammar(source_grammar);
     this.semantic = this.parser.createSemantics();
@@ -522,6 +567,11 @@ class Pigeon {
         return statements.children.map((child) => {
           return child.parse();
         });
+      },
+      Block(leftBracket, statements, rightBracket) {
+        return new PigeonBlock(
+          statements.children.map((child) => child.parse())
+        );
       },
       Line(statement, _) {
         return statement.parse();

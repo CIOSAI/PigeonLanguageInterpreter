@@ -1,8 +1,6 @@
 global context clean up :
 	native functions:
-		loops:
-			does break() work yet?:
-				block
 		when/unless
 		if
+		block uninterruptable issue (see Pigeon.ts l. 538)
 	other prebuilts

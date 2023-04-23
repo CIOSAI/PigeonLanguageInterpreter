@@ -1,5 +1,7 @@
 Pigeon {
-    Program = Line*
+    Program = (Line|Block)*
+    
+    Block = "{" (Line|Block)* "}"
 
     Line = Statement Semi
 
@@ -10,6 +12,7 @@ Pigeon {
 	FunctionCall = #(iden "(") listOf<(discard|Value), space> ")"
 
     Lambda = "(" listOf<Input, space> ")" Typing? "=>" Value
+           | "(" listOf<Input, space> ")" Typing? "=>" Block
 
     Input = iden Typing
 
