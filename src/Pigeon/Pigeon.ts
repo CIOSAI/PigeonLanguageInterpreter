@@ -329,7 +329,7 @@ class PigeonMut implements PigeonNode {
       if (exist != undefined)
         throw new Error(`Variable '${this.iden}' already exists`);
       contexts.add(this.iden, {
-        mut: false,
+        mut: true,
         data: this.value,
         evaluation: this.value.eval(contexts),
       });
@@ -377,7 +377,7 @@ class PigeonSet implements PigeonNode {
             .toString()} but got ${this.value.type(contexts).toString()}`
         );
       }
-      result[0].data = this.value.eval(contexts);
+      result[0].evaluation = this.value.eval(contexts);
     };
   }
   parse(pigeon: Pigeon, iden: ohm.Node) {
@@ -410,6 +410,20 @@ class PigeonSet implements PigeonNode {
       return;
     }
     result[0] = mutData(this.value);
+  }
+}
+
+class PigeonConditional implements PigeonNode {
+  type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
+
+  constructor(onTrue: boolean, condNode: PigeonNode, body: PigeonNode) {
+    this.type = (_) => TypeNull;
+    this.eval = (contexts) => {
+      if (onTrue == condNode.eval(contexts)) {
+        return body.eval(contexts);
+      }
+    };
   }
 }
 
@@ -629,6 +643,27 @@ class Pigeon {
       },
       Declarator(content) {
         return content.sourceString as "let" | "mut" | "set";
+      },
+      Conditional(whenUnless, cond, body) {
+        let condNode = cond.parse();
+        if (!TypeBool.includes(condNode.type(pigeon.contexts))) {
+          pigeon.errorQueue.push(() => {
+            pigeon.onTypeMismatch(
+              this,
+              TypeBool,
+              condNode.type(pigeon.contexts)
+            );
+          });
+          return new PigeonLiteral(null, TypeNull);
+        }
+        return new PigeonConditional(
+          whenUnless.parse() == "when",
+          condNode,
+          body.parse()
+        );
+      },
+      WhenUnless(content) {
+        return content.sourceString as "when" | "unless";
       },
       LambdaType(leftBracket, args, rightBracket, returnType) {
         return new PigeonLambdaType(

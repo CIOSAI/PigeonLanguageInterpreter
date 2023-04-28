@@ -14,14 +14,8 @@ document.getElementById("app")?.appendChild(nextLine);
 
 let pg = pigeonStart();
 
-//                                 ↓ break is supposed to be provided by "for"
-let sourceCode = `for(5 \n(ind:Int break:():null):null=>{\nlog(ind);break();log(ind);\n});`;
-// let sourceCode = `pop_corn((pop:():null)=>{pop();});`;
-// let sourceCode = `let say69 ()=>log(69);\napply(()=>log(420));`;
-// let sourceCode = `let do_smth (cb: ():null)=>cb();\nlet say69 ()=>log(69);\ndo_smth(()=>log(420));`;
-// let sourceCode = `for(5 \n(ind:Int break:():null):null=>\nlog(ind)\n);`;
-// let sourceCode = `(ind:Int break:():null):null=>log(1);`;
-// let sourceCode = `():null=>log(1);`;
+// let sourceCode = `for(5 \n(ind:Int break:():null):null=>{\nlog(ind);break();log(ind);\n});`;
+let sourceCode = `let b TRUE;\nmut out 0;\nwhen b {set out 1;};\nout;`;
 
 pg.onNoMatchingInputFound = (
   source: ohm.Node,

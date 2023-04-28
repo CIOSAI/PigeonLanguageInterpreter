@@ -6,6 +6,7 @@ Pigeon {
     Line = Statement Semi
 
     Statement = Declaration
+              | Conditional
               | FunctionCall
               | Value
 
@@ -19,6 +20,11 @@ Pigeon {
     Declaration = Declarator iden Typing? Value
 
     Declarator = "let" | "mut" | "set"
+
+    Conditional = WhenUnless (Bool|FunctionCall|iden) Value
+                | WhenUnless (Bool|FunctionCall|iden) Block
+
+    WhenUnless = "when" | "unless"
 
     Tuple = "(" listOf<Value, space> ")"
 
