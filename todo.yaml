@@ -1,6 +1,5 @@
 global context clean up :
 	native functions:
-		when/unless
+    break
 		if
-		block uninterruptable issue (see Pigeon.ts l. 538)
 	other prebuilts

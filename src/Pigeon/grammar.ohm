@@ -8,12 +8,12 @@ Pigeon {
     Statement = Declaration
               | Conditional
               | FunctionCall
+              | Return
               | Value
 
 	FunctionCall = #(iden "(") listOf<(discard|Value), space> ")"
 
-    Lambda = "(" listOf<Input, space> ")" Typing? "=>" Value
-           | "(" listOf<Input, space> ")" Typing? "=>" Block
+    Lambda = "(" listOf<Input, space> ")" Typing? "=>" (Value|Block)
 
     Input = iden Typing
 
@@ -21,8 +21,9 @@ Pigeon {
 
     Declarator = "let" | "mut" | "set"
 
-    Conditional = WhenUnless (Bool|FunctionCall|iden) Value
-                | WhenUnless (Bool|FunctionCall|iden) Block
+    Conditional = WhenUnless (Bool|FunctionCall|iden) (FunctionCall|Return|Block)
+
+    Return = "return" Value
 
     WhenUnless = "when" | "unless"
 

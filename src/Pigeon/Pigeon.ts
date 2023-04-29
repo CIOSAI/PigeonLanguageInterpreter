@@ -416,36 +416,88 @@ class PigeonSet implements PigeonNode {
 class PigeonConditional implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
   eval: (contexts: PigeonContextStack) => any;
+  triggered?: boolean;
+  body: PigeonNode;
 
   constructor(onTrue: boolean, condNode: PigeonNode, body: PigeonNode) {
+    this.body = body;
     this.type = (_) => TypeNull;
     this.eval = (contexts) => {
       if (onTrue == condNode.eval(contexts)) {
+        this.triggered = true;
         return body.eval(contexts);
-      }
+      } else this.triggered = false;
     };
+  }
+}
+
+class PigeonReturn implements PigeonNode {
+  type: (contexts: PigeonContextStack) => PigeonType;
+  eval: (contexts: PigeonContextStack) => any;
+  returnAt: ohm.Node;
+
+  constructor(value: PigeonNode, returnAt: ohm.Node) {
+    this.returnAt = returnAt;
+    this.type = (contexts) => value.type(contexts);
+    this.eval = (contexts) => value.eval(contexts);
   }
 }
 
 class PigeonBlock implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
   eval: (contexts: PigeonContextStack) => any;
-  constructor(lines: PigeonNode[]) {
+  constructor(pigeon: Pigeon, lines: PigeonNode[]) {
     this.type = (contexts: PigeonContextStack) => {
       contexts.push(new PigeonContext());
-      let lastType = TypeNull;
+
+      let returnNodes: PigeonNode[] = [new PigeonLiteral(null, TypeNull)];
+
       lines.forEach((line) => {
-        lastType = line.type(contexts);
+        if (line instanceof PigeonReturn) {
+          returnNodes.push(line);
+        } else if (line instanceof PigeonConditional) {
+          if (line.body instanceof PigeonReturn) {
+            returnNodes.push(line.body);
+          }
+        }
+        returnNodes[0] = new PigeonLiteral(null, line.type(contexts));
       });
+
       contexts.pop();
-      return lastType;
+
+      for (let i = 1; i < returnNodes.length; i++) {
+        if (
+          !returnNodes[0].type(contexts).includes(returnNodes[i].type(contexts))
+        ) {
+          pigeon.errorQueue.push(() => {
+            pigeon.onReturnTypeInconsistent(
+              (returnNodes[i] as PigeonReturn).returnAt,
+              returnNodes.map((node) => node.type(contexts))
+            );
+          });
+          return TypeNull;
+        }
+      }
+
+      return returnNodes[0].type(contexts);
     };
     this.eval = (contexts: PigeonContextStack) => {
       contexts.push(new PigeonContext());
       let lastValue = null;
-      lines.forEach((line) => {
-        lastValue = line.eval(contexts);
-      });
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        if (line instanceof PigeonReturn) {
+          lastValue = line.eval(contexts);
+          break;
+        } else if (line instanceof PigeonConditional) {
+          let condLine = line as PigeonConditional;
+          if (condLine.body instanceof PigeonReturn) {
+            lastValue = condLine.eval(contexts);
+            if (condLine.triggered) break;
+          }
+        }
+        lastValue = lines[i].eval(contexts);
+      }
       contexts.pop();
       return lastValue;
     };
@@ -456,6 +508,10 @@ class Pigeon {
   onItemTypeInconsistent: (source: ohm.Node, types: PigeonType[]) => void =
     () => {
       console.error("unhandled error: onItemTypeInconsistent");
+    };
+  onReturnTypeInconsistent: (source: ohm.Node, types: PigeonType[]) => void =
+    () => {
+      console.error("unhandled error: onReturnTypeInconsistent");
     };
   onNestedUnknownContent: (source: ohm.Node) => void = () => {
     console.error("unhandled error: onNestedUnknownContent");
@@ -584,6 +640,7 @@ class Pigeon {
       },
       Block(leftBracket, statements, rightBracket) {
         return new PigeonBlock(
+          pigeon,
           statements.children.map((child) => child.parse())
         );
       },
@@ -661,6 +718,9 @@ class Pigeon {
           condNode,
           body.parse()
         );
+      },
+      Return(tag, value) {
+        return new PigeonReturn(value.parse(), this);
       },
       WhenUnless(content) {
         return content.sourceString as "when" | "unless";

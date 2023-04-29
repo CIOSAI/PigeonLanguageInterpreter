@@ -14,8 +14,8 @@ document.getElementById("app")?.appendChild(nextLine);
 
 let pg = pigeonStart();
 
-// let sourceCode = `for(5 \n(ind:Int break:():null):null=>{\nlog(ind);break();log(ind);\n});`;
-let sourceCode = `let b TRUE;\nmut out 0;\nwhen b {set out 1;};\nout;`;
+let sourceCode = `for(5 \n(ind:Int break:():null):null=>{\nlog(9);\nbreak();\nlog(ind);\n});`;
+// let sourceCode = `{\nmut i 0; when FALSE return \`hewwo\`; set i 1; \`imposter\`;\n}`;
 
 pg.onNoMatchingInputFound = (
   source: ohm.Node,
