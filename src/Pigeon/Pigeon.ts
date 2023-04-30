@@ -16,9 +16,14 @@ import { PigeonData, PigeonContext, PigeonContextStack } from "./Context";
 
 const TypeUnknown = new PigeonPrimitive("Unknown");
 
+interface PigeonResult {
+  form: "value" | "null" | "block";
+  value: any;
+}
+
 interface PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
 }
 const mutData = (content: PigeonNode) => {
   return { mut: true, data: content, evaluation: undefined };
@@ -29,19 +34,21 @@ const constData = (content: PigeonNode) => {
 
 class PigeonLiteral implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   value: any;
 
   constructor(value: any, type: PigeonType) {
     this.value = value;
     this.type = (_) => type;
-    this.eval = (_) => value;
+    this.eval = (_) => {
+      return { form: "value", value: value };
+    };
   }
 }
 
 class PigeonIdentifier implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   value: string;
 
   constructor(pigeon: Pigeon, source: ohm.Node, value: string) {
@@ -66,7 +73,7 @@ class PigeonIdentifier implements PigeonNode {
       if (search == undefined) {
         throw new Error(`Variable '${value}' used before declaration `);
       } else {
-        return search[0].evaluation;
+        return { form: "value", value: search[0].evaluation };
       }
     };
   }
@@ -74,7 +81,7 @@ class PigeonIdentifier implements PigeonNode {
 
 class PigeonTuple implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   value: PigeonNode[];
 
   constructor(value: any[]) {
@@ -84,13 +91,18 @@ class PigeonTuple implements PigeonNode {
         "Tuple",
         value.map((v) => v.type(contexts))
       );
-    this.eval = (contexts) => this.value.map((x) => x.eval(contexts));
+    this.eval = (contexts) => {
+      return {
+        form: "value",
+        value: this.value.map((x) => x.eval(contexts).value),
+      };
+    };
   }
 }
 
 class PigeonArray implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   value: any[];
 
   constructor(pigeon: Pigeon, source: ohm.Node, value: any[]) {
@@ -121,13 +133,18 @@ class PigeonArray implements PigeonNode {
         return new PigeonArrayType(type);
       }
     };
-    this.eval = (contexts) => this.value.map((x) => x.eval(contexts));
+    this.eval = (contexts) => {
+      return {
+        form: "value",
+        value: this.value.map((x) => x.eval(contexts).value),
+      };
+    };
   }
 }
 
 class PigeonFunctionCall implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   iden: PigeonIdentifier;
   args: Array<PigeonNode>;
 
@@ -195,16 +212,16 @@ class PigeonFunctionCall implements PigeonNode {
       return TypeUnknown;
     };
     this.eval = (contexts) => {
-      let toCall = this.iden.eval(contexts);
-      let params = this.args.map((arg) => arg.eval(contexts));
-      return toCall(params);
+      let toCall = this.iden.eval(contexts).value;
+      let params = this.args.map((arg) => arg.eval(contexts).value);
+      return { form: "value", value: toCall(params) };
     };
   }
 }
 
 class PigeonLambda implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonLambdaType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   args: { name: string; type: PigeonType }[];
   body: PigeonNode;
 
@@ -213,6 +230,7 @@ class PigeonLambda implements PigeonNode {
     this.body = body;
     this.type = (contexts: PigeonContextStack) => {
       let localScope = new PigeonContext();
+      contexts.push(localScope);
       for (let arg of args) {
         let pseudoData: PigeonNode = new PigeonLiteral(null, arg.type);
         if (arg.type instanceof PigeonLambdaType) {
@@ -222,9 +240,8 @@ class PigeonLambda implements PigeonNode {
             () => {}
           );
         }
-        localScope.add(arg.name, mutData(pseudoData));
+        contexts.add(arg.name, mutData(pseudoData));
       }
-      contexts.push(localScope);
 
       let lambdaType = new PigeonLambdaType(
         this.args.map((param) => param.type),
@@ -233,28 +250,64 @@ class PigeonLambda implements PigeonNode {
       contexts.pop();
       return lambdaType;
     };
-    this.eval = (contexts) => (params: Array<any>) => {
-      if (params.length != this.args.length)
-        throw new Error("Invalid number of arguments");
-      let localScope = new PigeonContext();
-      for (let i = 0; i < args.length; i++) {
-        localScope.add(this.args[i].name, {
-          mut: true,
-          data: new PigeonLiteral(params[i], this.args[i].type),
-          evaluation: params[i],
-        });
-      }
-      contexts.push(localScope);
-      let returnedValue = this.body.eval(contexts);
-      contexts.pop();
-      return returnedValue;
+    this.eval = (contexts) => {
+      return {
+        form: "value",
+        value: (params: Array<any>) => {
+          if (params.length != this.args.length)
+            throw new Error("Invalid number of arguments");
+
+          let blockHalt = false;
+
+          let localScope = new PigeonContext();
+          for (let i = 0; i < args.length; i++) {
+            localScope.add(this.args[i].name, {
+              mut: true,
+              data: new PigeonLiteral(params[i], this.args[i].type),
+              evaluation: params[i],
+            });
+            if (typeof params[i] == "function") {
+              if (params[i].name == "breakCallback") {
+                (
+                  localScope.get(this.args[i].name) as PigeonData[]
+                )[0].evaluation = () => {
+                  params[i]();
+                  blockHalt = true;
+                };
+              }
+            }
+          }
+
+          contexts.push(localScope);
+
+          let returnedValue = null;
+          let lambdaResult = this.body.eval(contexts);
+          if (lambdaResult.form == "block") {
+            while (true) {
+              let next = lambdaResult.value.next();
+              if (next.done) break;
+              returnedValue = next.value;
+              if (blockHalt) {
+                returnedValue = null;
+                break;
+              }
+            }
+          } else {
+            returnedValue = lambdaResult.value;
+          }
+
+          contexts.pop();
+
+          return returnedValue;
+        },
+      };
     };
   }
 }
 
 class PigeonPrebuiltLambda implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonLambdaType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   args: PigeonType[];
 
   constructor(args: PigeonType[], output: PigeonType, func: Function) {
@@ -262,28 +315,35 @@ class PigeonPrebuiltLambda implements PigeonNode {
     this.type = (contexts: PigeonContextStack) => {
       return new PigeonLambdaType(this.args, output);
     };
-    this.eval = (contexts) => (params: Array<any>) => {
-      if (params.length != this.args.length)
-        throw new Error("Invalid number of arguments");
-      try {
-        return func(...params);
-      } catch (error) {
-        throw new Error("Internal error: " + error);
-      }
+    this.eval = (contexts) => {
+      return {
+        form: "value",
+        value: (params: Array<any>) => {
+          if (params.length != this.args.length)
+            throw new Error("Invalid number of arguments");
+          try {
+            return func(...params);
+          } catch (error) {
+            throw new Error("Internal error: " + error);
+          }
+        },
+      };
     };
   }
 }
 
 class PigeonLet implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   iden: string;
   value: PigeonNode;
   constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
     this.iden = iden.sourceString;
     this.value = value;
-    this.parse(pigeon, iden);
-    this.type = (contexts: PigeonContextStack) => TypeNull;
+    this.type = (contexts: PigeonContextStack) => {
+      this.parse(pigeon, iden);
+      return TypeNull;
+    };
     this.eval = (contexts) => {
       let exist = contexts.get(this.iden);
       if (exist != undefined)
@@ -291,8 +351,9 @@ class PigeonLet implements PigeonNode {
       contexts.add(this.iden, {
         mut: false,
         data: this.value,
-        evaluation: this.value.eval(contexts),
+        evaluation: this.value.eval(contexts).value,
       });
+      return { form: "null", value: null };
     };
   }
   parse(pigeon: Pigeon, iden: ohm.Node) {
@@ -316,14 +377,16 @@ class PigeonLet implements PigeonNode {
 
 class PigeonMut implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   iden: string;
   value: PigeonNode;
   constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
     this.iden = iden.sourceString;
     this.value = value;
-    this.parse(pigeon, iden);
-    this.type = (contexts: PigeonContextStack) => TypeNull;
+    this.type = (contexts: PigeonContextStack) => {
+      this.parse(pigeon, iden);
+      return TypeNull;
+    };
     this.eval = (contexts) => {
       let exist = contexts.get(this.iden);
       if (exist != undefined)
@@ -331,8 +394,9 @@ class PigeonMut implements PigeonNode {
       contexts.add(this.iden, {
         mut: true,
         data: this.value,
-        evaluation: this.value.eval(contexts),
+        evaluation: this.value.eval(contexts).value,
       });
+      return { form: "null", value: null };
     };
   }
   parse(pigeon: Pigeon, iden: ohm.Node) {
@@ -356,7 +420,7 @@ class PigeonMut implements PigeonNode {
 
 class PigeonSet implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   iden: string;
   value: PigeonNode;
   constructor(pigeon: Pigeon, iden: ohm.Node, value: PigeonNode) {
@@ -377,7 +441,8 @@ class PigeonSet implements PigeonNode {
             .toString()} but got ${this.value.type(contexts).toString()}`
         );
       }
-      result[0].evaluation = this.value.eval(contexts);
+      result[0].evaluation = this.value.eval(contexts).value;
+      return { form: "null", value: null };
     };
   }
   parse(pigeon: Pigeon, iden: ohm.Node) {
@@ -415,7 +480,7 @@ class PigeonSet implements PigeonNode {
 
 class PigeonConditional implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   triggered?: boolean;
   body: PigeonNode;
 
@@ -423,17 +488,32 @@ class PigeonConditional implements PigeonNode {
     this.body = body;
     this.type = (_) => TypeNull;
     this.eval = (contexts) => {
-      if (onTrue == condNode.eval(contexts)) {
+      if (onTrue == condNode.eval(contexts).value) {
         this.triggered = true;
-        return body.eval(contexts);
+        let evaluated = body.eval(contexts);
+        if (evaluated.form == "block") {
+          let lastValue = null;
+          while (true) {
+            let next = evaluated.value.next();
+            if (next.done) break;
+            lastValue = next.value;
+          }
+          return {
+            form: lastValue == null ? "null" : "value",
+            value: lastValue,
+          };
+        } else {
+          return { form: "value", value: evaluated.value };
+        }
       } else this.triggered = false;
+      return { form: "null", value: null };
     };
   }
 }
 
 class PigeonReturn implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   returnAt: ohm.Node;
 
   constructor(value: PigeonNode, returnAt: ohm.Node) {
@@ -445,7 +525,7 @@ class PigeonReturn implements PigeonNode {
 
 class PigeonBlock implements PigeonNode {
   type: (contexts: PigeonContextStack) => PigeonType;
-  eval: (contexts: PigeonContextStack) => any;
+  eval: (contexts: PigeonContextStack) => PigeonResult;
   constructor(pigeon: Pigeon, lines: PigeonNode[]) {
     this.type = (contexts: PigeonContextStack) => {
       contexts.push(new PigeonContext());
@@ -463,8 +543,6 @@ class PigeonBlock implements PigeonNode {
         returnNodes[0] = new PigeonLiteral(null, line.type(contexts));
       });
 
-      contexts.pop();
-
       for (let i = 1; i < returnNodes.length; i++) {
         if (
           !returnNodes[0].type(contexts).includes(returnNodes[i].type(contexts))
@@ -479,27 +557,50 @@ class PigeonBlock implements PigeonNode {
         }
       }
 
-      return returnNodes[0].type(contexts);
+      let lastType = returnNodes[0].type(contexts);
+
+      contexts.pop();
+
+      return lastType;
     };
     this.eval = (contexts: PigeonContextStack) => {
-      contexts.push(new PigeonContext());
-      let lastValue = null;
-      for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
-        if (line instanceof PigeonReturn) {
-          lastValue = line.eval(contexts);
-          break;
-        } else if (line instanceof PigeonConditional) {
-          let condLine = line as PigeonConditional;
-          if (condLine.body instanceof PigeonReturn) {
-            lastValue = condLine.eval(contexts);
-            if (condLine.triggered) break;
+      function* blockFeed() {
+        contexts.push(new PigeonContext());
+        for (let i = 0; i < lines.length; i++) {
+          let line = lines[i];
+          if (line instanceof PigeonReturn) {
+            let returnedValue = line.eval(contexts).value;
+            contexts.pop();
+            yield returnedValue;
+            return;
+          } else if (line instanceof PigeonConditional) {
+            let condLine = line as PigeonConditional;
+            if (condLine.body instanceof PigeonReturn) {
+              let result = condLine.eval(contexts).value;
+              if (condLine.triggered) {
+                contexts.pop();
+                yield result;
+                return;
+              }
+            }
+          }
+
+          let evaluated = lines[i].eval(contexts);
+          if (evaluated.form == "block") {
+            let lastValue = null;
+            while (true) {
+              let next = evaluated.value.next();
+              if (next.done) break;
+              lastValue = next.value;
+            }
+            yield lastValue;
+          } else {
+            yield evaluated.value;
           }
         }
-        lastValue = lines[i].eval(contexts);
+        contexts.pop();
       }
-      contexts.pop();
-      return lastValue;
+      return { form: "block", value: blockFeed() };
     };
   }
 }
@@ -577,19 +678,20 @@ class Pigeon {
       this.contexts.add(name, {
         mut: false,
         data: content,
-        evaluation: content.eval(this.contexts),
+        evaluation: content.eval(this.contexts).value,
       });
     };
     addGlobalPrebuilt(
       "len",
       new PigeonPrebuiltLambda([TypeString], TypeInt, (arg: string) => {
-        return arg.length;
+        return { form: "value", value: arg.length };
       })
     );
     addGlobalPrebuilt(
       "log",
       new PigeonPrebuiltLambda([TypeInt], TypeNull, (arg: any) => {
         console.log(arg);
+        return { form: "null", value: null };
       })
     );
     addGlobalPrebuilt(
@@ -605,27 +707,24 @@ class Pigeon {
         TypeNull,
         (amt: number, callback: (params: any[]) => void) => {
           for (let i = 0; i < amt; i++) {
-            // the block takes note that the loop is broken, but follows thru
-            // this is expected, but problematic behavior
             let broke = false;
-            callback([
-              i,
-              () => {
-                broke = true;
-              },
-            ]);
+            let breakCallback = () => {
+              broke = true;
+            };
+            callback([i, breakCallback]);
             if (broke) break;
           }
+          return { form: "null", value: null };
         }
       )
     );
     addGlobalPrebuilt(
-      "apply",
+      ">",
       new PigeonPrebuiltLambda(
-        [new PigeonLambdaType([], TypeNull)],
-        TypeNull,
-        (callback: (params: any[]) => void) => {
-          callback([]);
+        [TypeInt, TypeInt],
+        TypeBool,
+        (a: number, b: number) => {
+          return { form: "value", value: a > b };
         }
       )
     );
@@ -852,7 +951,16 @@ class Pigeon {
     let lines = parsed.map((x) => () => x.eval(this.contexts));
     function* generator() {
       for (let line of lines) {
-        yield line();
+        let lineResult = line();
+        if (lineResult.form == "block") {
+          while (true) {
+            let next = lineResult.value.next();
+            if (next.done) break;
+            yield next.value;
+          }
+        } else {
+          yield lineResult.value;
+        }
       }
     }
     return generator();

@@ -14,8 +14,19 @@ document.getElementById("app")?.appendChild(nextLine);
 
 let pg = pigeonStart();
 
-let sourceCode = `for(5 \n(ind:Int break:():null):null=>{\nlog(9);\nbreak();\nlog(ind);\n});`;
-// let sourceCode = `{\nmut i 0; when FALSE return \`hewwo\`; set i 1; \`imposter\`;\n}`;
+// these two statements throw error, idk why
+// let sourceCode = `for(5 \n(ind:Int break:():null):null=>{\nwhen >(ind 2) break();\nlog(ind);\n});`;
+let sourceCode = `let test (f:(Int):null):null=>{f();};\ntest((a:Int)=>{log(a);});`;
+
+pg.onVariableUsedBeforeDeclaration = (source: ohm.Node) => {
+  console.log(`Variable ${source.sourceString} Used Before Declaration`);
+  console.log(source.source.getLineAndColumnMessage());
+};
+
+pg.onVariableRedeclared = (source: ohm.Node) => {
+  console.log(`Variable ${source.sourceString} was Redeclared`);
+  console.log(source.source.getLineAndColumnMessage());
+};
 
 pg.onNoMatchingInputFound = (
   source: ohm.Node,
